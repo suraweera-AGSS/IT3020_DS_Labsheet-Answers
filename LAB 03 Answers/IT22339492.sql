@@ -1,0 +1,248 @@
+--IT22339492--
+
+CREATE TYPE address_t AS OBJECT(
+      streetNo varchar(5),
+      streetName varchar(20),
+      suburb varchar(20),
+      state varchar(20),
+      pin varchar(10)     
+)
+/
+
+--Create VARRAY Type
+
+CREATE TYPE exchanges_varray_t AS VARRAY(5) OF VARCHAR(15)
+/
+
+--Create stock type
+
+CREATE TYPE stock_t AS OBJECT(
+       company varchar(10),
+       c_price number(6,2),
+       exchanges exchanges_varray_t,
+       dividend number(6,2),
+       shares number(4,2)
+
+)
+/
+
+--Create stock table
+
+CREATE TABLE stock of stock_t(
+       company primary key
+
+)
+/
+
+--nested table
+--Create investment type
+
+CREATE TYPE invest_t AS OBJECT(
+       company REF stock_t,
+       price number(6,2),
+       pDate Date,
+       Qty number(6)
+)
+/
+
+--nested table type
+
+CREATE TYPE invest_nest_t AS TABLE OF invest_t
+/
+--create client type
+
+CREATE TYPE client_t AS OBJECT(
+       name varchar(20),
+       address address_t,
+       investments invest_nest_t
+)
+/
+
+--create client table
+
+CREATE TABLE client of client_t(
+       name primary key
+
+)
+nested table investments STORE AS nest_tbl;
+/
+
+--Inserting values
+
+INSERT INTO stock VALUES(stock_t('BHP',10.50,exchanges_varray_t('Sydney,NewYORK'),1.50,3.20));
+INSERT INTO stock VALUES(stock_t('IBM',70.00,exchanges_varray_t('NewYORK','London','Tokyo'),4.25,10.00));
+INSERT INTO stock VALUES(stock_t('INTEL',76.50,exchanges_varray_t('NewYORK','London'),5.00,12.40));
+INSERT INTO stock VALUES(stock_t('FORD',40.00,exchanges_varray_t('NewYORK'),2.00,8.50));
+INSERT INTO stock VALUES(stock_t('GM',60.00,exchanges_varray_t('NewYORK'),2.50,9.20));
+INSERT INTO stock VALUES(stock_t('INFOSYS',45.00,exchanges_varray_t('NewYORK'),3.00,7.80));
+
+INSERT INTO client VALUES(
+    client_t('John Smith',address_t('3', 'East Av', 'Bentley', 'WA', '6102'),
+              invest_nest_t(invest_t((select ref(s) from stock s where company='BHP'),12.00,
+                                     TO_DATE('02-OCT-2010', 'DD-MON-YYYY'),1000))          
+)
+);
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'John Smith'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'BHP'), 10.50, TO_DATE('08-JUN-2002', 'DD-MON-YYYY'), 2000));
+
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'John Smith'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'IBM'), 58.00, TO_DATE('12-FEB-2000', 'DD-MON-YYYY'), 500));
+
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'John Smith'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'IBM'), 65.00, TO_DATE('10-APR-2001', 'DD-MON-YYYY'), 1200));
+    
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'John Smith'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'INFOSYS'), 64.00, TO_DATE('11-AUG-2001', 'DD-MON-YYYY'), 1000));
+
+
+--Inserting the second row of client table
+
+INSERT INTO client VALUES(
+    client_t('Jill Brody',address_t('42', 'Bent St', 'Perth', 'WA', '6001'),
+              invest_nest_t(invest_t((select ref(s) from stock s where company='INTEL'),35.00,
+                                     TO_DATE('30-JAN-2000', 'DD-MON-YYYY'),300))          
+)
+);
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'Jill Brody'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'INTEL'), 54.00, TO_DATE('30-JAN-2001', 'DD-MON-YYYY'), 400));    
+
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'Jill Brody'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'INTEL'), 60.00, TO_DATE('02-OCT-2001', 'DD-MON-YYYY'), 200));
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'Jill Brody'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'FORD'), 40.00, TO_DATE('05-OCT-1999', 'DD-MON-YYYY'), 300));    
+
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'Jill Brody'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'GM'), 55.50, TO_DATE('12-DEC-2000', 'DD-MON-YYYY'), 500));
+
+
+
+
+SELECT * FROM client;
+SELECT * FROM stock; 
+
+SELECT VALUE(s)
+FROM stock s;
+
+
+--(a)
+
+SELECT c.name AS client_name,
+       DEREF(i.company).company AS stock_name,
+       DEREF(i.company).c_price AS current_price,
+       DEREF(i.company).dividend AS last_dividend,
+       DEREF(i.company).shares AS earnings_per_share
+FROM client c, TABLE(c.investments) i;
+
+--(b)
+
+SELECT c.name AS client_name,
+       DEREF(i.company).company AS stock_name,
+       SUM(i.Qty) AS total_shares,
+       SUM(i.Qty * i.price) / SUM(i.Qty) AS avg_purchase_price
+FROM client c, TABLE(c.investments) i
+GROUP BY c.name, DEREF(i.company).company;
+
+--(c)
+
+SELECT DEREF(i.company).company AS stock_name,
+       c.name AS client_name,
+       SUM(i.Qty) AS shares_held,
+       SUM(i.Qty * DEREF(i.company).c_price) AS current_value
+FROM client c, 
+     TABLE(c.investments) i,
+     TABLE(DEREF(i.company).exchanges) e
+WHERE e.column_value = 'NewYORK'
+GROUP BY DEREF(i.company).company, c.name;
+
+--(d)
+
+SELECT c.name AS client_name,
+       SUM(i.Qty * i.price) AS total_purchase_value
+FROM client c, TABLE(c.investments) i
+GROUP BY c.name;
+
+--(e)
+
+SELECT c.name AS client_name,
+       SUM(i.Qty * DEREF(i.company).c_price) - SUM(i.Qty * i.price) AS book_profit
+FROM client c, TABLE(c.investments) i
+GROUP BY c.name;
+
+
+
+--(04)
+--UPDATE 
+-- Remove INFOSYS stocks from John's investments
+DELETE FROM TABLE (
+    SELECT c.investments
+    FROM client c
+    WHERE c.name = 'John Smith'
+)
+WHERE company = (SELECT REF(s) FROM stock s WHERE company = 'INFOSYS');
+
+-- Add INFOSYS stocks to Jill's investments
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'Jill Brody'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'INFOSYS'), 45.00, TO_DATE('02-MAR-2025', 'DD-MON-YYYY'), 1000));
+
+
+-- Remove GM stocks from Jill's investments
+DELETE FROM TABLE (
+    SELECT c.investments
+    FROM client c
+    WHERE c.name = 'Jill Brody'
+)
+WHERE company = (SELECT REF(s) FROM stock s WHERE company = 'GM');
+
+-- Add GM stocks to John's investments
+INSERT INTO TABLE (
+    SELECT c.investments 
+    FROM client c 
+    WHERE c.name = 'John Smith'
+) VALUES(invest_t((SELECT REF(s) FROM stock s WHERE company = 'GM'), 60.00, TO_DATE('02-MAR-2025', 'DD-MON-YYYY'), 500));
+
+
+
+--Checking the update 
+
+SELECT c.name AS client_name,
+       DEREF(i.company).company AS stock_name,
+       DEREF(i.company).c_price AS current_price,
+       DEREF(i.company).dividend AS last_dividend,
+       DEREF(i.company).shares AS earnings_per_share
+FROM client c, TABLE(c.investments) i;
+
+
